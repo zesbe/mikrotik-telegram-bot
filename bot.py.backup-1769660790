@@ -1,7 +1,6 @@
 #!/usr/bin/env python3
 import subprocess
 import os
-import socket
 from telegram import Update, ReplyKeyboardMarkup, KeyboardButton, ReplyKeyboardRemove
 from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes
 
@@ -12,18 +11,12 @@ MIKROTIK_USER = "tunnel"
 MIKROTIK_PASS = "tunnelbekasi"
 MIKROTIK_PORT = 2222
 
-# VPN Configuration Settings
-VPN_DOMAIN = "vpn.zesbe.my.id"
-VPN_PSK = "ZesbeVPN2024!"
-VPN_TYPE = "L2TP/IPSec PSK"
-
-# Keyboard layout - Added VPN Config button
+# Keyboard layout
 MAIN_KEYBOARD = ReplyKeyboardMarkup([
     [KeyboardButton("📊 Status"), KeyboardButton("💻 Resource")],
     [KeyboardButton("🔗 VPN"), KeyboardButton("📈 Traffic")],
     [KeyboardButton("👥 PPPoE"), KeyboardButton("📶 Hotspot")],
-    [KeyboardButton("📱 VPN Config"), KeyboardButton("💾 Backup")],
-    [KeyboardButton("🔄 Reboot")]
+    [KeyboardButton("💾 Backup"), KeyboardButton("🔄 Reboot")]
 ], resize_keyboard=True)
 
 PPPOE_KEYBOARD = ReplyKeyboardMarkup([
@@ -35,12 +28,6 @@ PPPOE_KEYBOARD = ReplyKeyboardMarkup([
 HOTSPOT_KEYBOARD = ReplyKeyboardMarkup([
     [KeyboardButton("📋 List Hotspot"), KeyboardButton("✅ Active Hotspot")],
     [KeyboardButton("➕ Add Hotspot"), KeyboardButton("❌ Del Hotspot")],
-    [KeyboardButton("🔙 Menu Utama")]
-], resize_keyboard=True)
-
-VPN_CONFIG_KEYBOARD = ReplyKeyboardMarkup([
-    [KeyboardButton("👤 Generate User Config"), KeyboardButton("📋 List VPN Users")],
-    [KeyboardButton("➕ Create VPN User"), KeyboardButton("❌ Delete VPN User")],
     [KeyboardButton("🔙 Menu Utama")]
 ], resize_keyboard=True)
 
@@ -64,80 +51,51 @@ def download_file_from_mikrotik(remote_file, local_file):
     except:
         return False
 
-def resolve_server_ip(domain):
-    try:
-        return socket.gethostbyname(domain)
-    except:
-        return "Could not resolve"
-
 def format_bytes(b):
-    if b < 1024: return f"{b}B"
-    elif b < 1024**2: return f"{b/1024:.1f}KB"
-    elif b < 1024**3: return f"{b/1024**2:.1f}MB"
-    else: return f"{b/1024**3:.1f}GB"
+    try:
+        b = int(b)
+        if b >= 1073741824: return f"{b/1073741824:.1f} GB"
+        elif b >= 1048576: return f"{b/1048576:.1f} MB"
+        elif b >= 1024: return f"{b/1024:.1f} KB"
+        else: return f"{b} B"
+    except:
+        return str(b)
 
 def check_auth(chat_id):
     return chat_id == ALLOWED_CHAT_ID
 
-def generate_vpn_config(username=None, password=None, client_ip="Dynamic"):
-    """Generate VPN configuration display"""
-    server_ip = resolve_server_ip(VPN_DOMAIN)
-
-    config = f"""📱 *VPN Configuration*
-
-🔐 *Client Credentials*
-👤 Username: `{username or 'Not specified'}`
-🔑 Password: `{password or 'Not specified'}`
-📍 Client IP: {client_ip}
-
-🌐 *Server Settings*
-🖥 Server: `{VPN_DOMAIN}`
-🔢 Server IP: `{server_ip}`
-🔒 VPN Type: {VPN_TYPE}
-🔐 PSK: `{VPN_PSK}`
-
-📋 *Connection Settings*
-🌐 Protocol: L2TP over IPSec
-🔐 Encryption: Auto
-🔒 Authentication: PAP/CHAP
-🚀 MTU: 1460
-
-📱 *Quick Setup Guide*
-1️⃣ Go to VPN settings on your device
-2️⃣ Add new L2TP/IPSec connection
-3️⃣ Enter server: `{VPN_DOMAIN}`
-4️⃣ Enter username and password
-5️⃣ Set PSK: `{VPN_PSK}`
-6️⃣ Connect and enjoy!
-
-✅ *Compatible with*: Android, iOS, Windows, macOS, Linux"""
-
-    return config
-
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if not check_auth(update.effective_chat.id): return
-    await update.message.reply_text(
-        ReplyKeyboardRemove(),
-        reply_markup=ReplyKeyboardRemove()
-    )
+    if not check_auth(update.effective_chat.id):
+        await update.message.reply_text("⛔ Unauthorized")
+        return
+    
+    # Force refresh keyboard (clear cached keyboard first)
+    await update.message.reply_text("🔄 Loading MikroTik dashboard...", reply_markup=ReplyKeyboardRemove())
+    
+    help_text = """🤖 *MikroTik Remote Bot*
 
-    help_text = """🤖 *MikroTik Management Bot v3*
+🎯 **Gunakan keyboard buttons di bawah untuk kontrol MikroTik**
 
-🔧 *Available Commands:*
-📊 Status - System information
-💻 Resource - CPU/Memory usage
-🔗 VPN - VPN connections status
-📈 Traffic - Interface statistics
-👥 PPPoE - PPPoE user management
-📶 Hotspot - Hotspot management
-📱 VPN Config - Generate client VPN configurations
-💾 Backup - Download system backup
-🔄 Reboot - Restart router
-🏓 `/ping <host>` - Network ping test
+*Optional Commands (manual):*
+/status - Info singkat
+/resource - CPU, RAM, Uptime  
+/vpn - Status VPN
+/traffic - Traffic info
+/ping <host> - Ping target
 
-👤 *Authorized User*: Telegram ID {ALLOWED_CHAT_ID}
-🎯 *Router*: {MIKROTIK_HOST}:{MIKROTIK_PORT}"""
+*PPPoE Management:*
+/addpppoe /delpppoe /listpppoe /activepppoe
 
+*Hotspot Management:*  
+/addhotspot /delhotspot /listhotspot /activehotspot
+
+*System Control:*
+/backup - Backup config
+/reboot - Reboot router
+
+✅ **Keyboard dengan 8 buttons siap digunakan!**
+🖥 Router:  (Game Oracle)"""
+    
     await update.message.reply_text(help_text, parse_mode='Markdown', reply_markup=MAIN_KEYBOARD)
 
 async def status(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -159,43 +117,6 @@ async def traffic(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not check_auth(update.effective_chat.id): return
     result = run_mikrotik_command('/interface print stats')
     await update.message.reply_text(f"📈 *Traffic*\n```\n{result[:3000]}\n```", parse_mode='Markdown', reply_markup=MAIN_KEYBOARD)
-
-async def vpn_config_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if not check_auth(update.effective_chat.id): return
-    await update.message.reply_text("📱 *VPN Configuration Menu*\n\nPilih aksi untuk manajemen VPN client:", parse_mode='Markdown', reply_markup=VPN_CONFIG_KEYBOARD)
-
-async def generate_user_config(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if not check_auth(update.effective_chat.id): return
-
-    # Get random user from PPPoE secrets for demo
-    result = run_mikrotik_command('/ppp secret print detail where service=pppoe')
-
-    if "name=" in result:
-        # Parse first user for demo
-        lines = result.split('\n')
-        username = None
-        password = None
-
-        for line in lines:
-            if 'name=' in line and not username:
-                username = line.split('name=')[1].split()[0]
-            if 'password=' in line and not password:
-                password = line.split('password=')[1].split()[0]
-                break
-
-        if username and password:
-            config = generate_vpn_config(username, password)
-        else:
-            config = generate_vpn_config("example-user", "example-pass")
-    else:
-        config = generate_vpn_config("example-user", "example-pass")
-
-    await update.message.reply_text(config, parse_mode='Markdown', reply_markup=VPN_CONFIG_KEYBOARD)
-
-async def list_vpn_users(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if not check_auth(update.effective_chat.id): return
-    result = run_mikrotik_command('/ppp secret print where service=pppoe')
-    await update.message.reply_text(f"📋 *VPN Users (PPPoE)*\n```\n{result}\n```", parse_mode='Markdown', reply_markup=VPN_CONFIG_KEYBOARD)
 
 async def ping_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not check_auth(update.effective_chat.id): return
@@ -228,18 +149,18 @@ async def delpppoe(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("❌ Ketik username yang mau dihapus:")
         return
     username = context.args[0]
-    result = run_mikrotik_command(f'/ppp secret remove [find name={username}]')
-    await update.message.reply_text(f"❌ *Deleted*\n\nUser: `{username}`", parse_mode='Markdown', reply_markup=PPPOE_KEYBOARD)
+    run_mikrotik_command(f'/ppp secret remove [find name={username}]')
+    await update.message.reply_text(f"🗑 *Deleted*: `{username}`", parse_mode='Markdown', reply_markup=PPPOE_KEYBOARD)
 
 async def listpppoe(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not check_auth(update.effective_chat.id): return
-    result = run_mikrotik_command('/ppp secret print where service=pppoe')
-    await update.message.reply_text(f"📋 *PPPoE Users*\n```\n{result}\n```", parse_mode='Markdown', reply_markup=PPPOE_KEYBOARD)
+    result = run_mikrotik_command('/ppp secret print')
+    await update.message.reply_text(f"📋 *PPPoE Users*\n```\n{result[:3500]}\n```", parse_mode='Markdown', reply_markup=PPPOE_KEYBOARD)
 
 async def activepppoe(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not check_auth(update.effective_chat.id): return
-    result = run_mikrotik_command('/ppp active print where service=pppoe')
-    await update.message.reply_text(f"✅ *Active PPPoE*\n```\n{result}\n```", parse_mode='Markdown', reply_markup=PPPOE_KEYBOARD)
+    result = run_mikrotik_command('/ppp active print')
+    await update.message.reply_text(f"✅ *Active PPPoE*\n```\n{result[:3500]}\n```", parse_mode='Markdown', reply_markup=PPPOE_KEYBOARD)
 
 # Hotspot Commands
 async def addhotspot(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -249,8 +170,11 @@ async def addhotspot(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("➕ Ketik: `username password`", parse_mode='Markdown')
         return
     username, password = context.args[0], context.args[1]
-    result = run_mikrotik_command(f'/ip hotspot user add name={username} password={password} profile=default')
-    await update.message.reply_text(f"✅ *Hotspot Created*\n\nUser: `{username}`\nPass: `{password}`", parse_mode='Markdown', reply_markup=HOTSPOT_KEYBOARD)
+    result = run_mikrotik_command(f'/ip hotspot user add name={username} password={password}')
+    if "failure" in result.lower() or "error" in result.lower():
+        await update.message.reply_text(f"❌ Gagal:\n{result}", reply_markup=HOTSPOT_KEYBOARD)
+    else:
+        await update.message.reply_text(f"✅ *Hotspot User Created*\n\nUser: `{username}`\nPass: `{password}`", parse_mode='Markdown', reply_markup=HOTSPOT_KEYBOARD)
 
 async def delhotspot(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not check_auth(update.effective_chat.id): return
@@ -259,19 +183,20 @@ async def delhotspot(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("❌ Ketik username yang mau dihapus:")
         return
     username = context.args[0]
-    result = run_mikrotik_command(f'/ip hotspot user remove [find name={username}]')
-    await update.message.reply_text(f"❌ *Deleted*\n\nUser: `{username}`", parse_mode='Markdown', reply_markup=HOTSPOT_KEYBOARD)
+    run_mikrotik_command(f'/ip hotspot user remove [find name={username}]')
+    await update.message.reply_text(f"🗑 *Deleted*: `{username}`", parse_mode='Markdown', reply_markup=HOTSPOT_KEYBOARD)
 
 async def listhotspot(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not check_auth(update.effective_chat.id): return
     result = run_mikrotik_command('/ip hotspot user print')
-    await update.message.reply_text(f"📋 *Hotspot Users*\n```\n{result}\n```", parse_mode='Markdown', reply_markup=HOTSPOT_KEYBOARD)
+    await update.message.reply_text(f"📋 *Hotspot Users*\n```\n{result[:3500]}\n```", parse_mode='Markdown', reply_markup=HOTSPOT_KEYBOARD)
 
 async def activehotspot(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not check_auth(update.effective_chat.id): return
     result = run_mikrotik_command('/ip hotspot active print')
-    await update.message.reply_text(f"✅ *Active Hotspot*\n```\n{result}\n```", parse_mode='Markdown', reply_markup=HOTSPOT_KEYBOARD)
+    await update.message.reply_text(f"✅ *Active Hotspot*\n```\n{result[:3500]}\n```", parse_mode='Markdown', reply_markup=HOTSPOT_KEYBOARD)
 
+# System Commands
 async def backup(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not check_auth(update.effective_chat.id): return
     await update.message.reply_text("💾 Creating backup...", reply_markup=MAIN_KEYBOARD)
@@ -290,10 +215,10 @@ async def reboot(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not check_auth(update.effective_chat.id): return
-
+    
     text = update.message.text
     chat_id = update.effective_chat.id
-
+    
     # Handle keyboard buttons
     if text == "📊 Status":
         await status(update, context)
@@ -303,8 +228,6 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await vpn(update, context)
     elif text == "📈 Traffic":
         await traffic(update, context)
-    elif text == "📱 VPN Config":
-        await vpn_config_menu(update, context)
     elif text == "👥 PPPoE":
         await update.message.reply_text("👥 *PPPoE Menu*\nPilih aksi:", parse_mode='Markdown', reply_markup=PPPOE_KEYBOARD)
     elif text == "📶 Hotspot":
@@ -315,19 +238,6 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await reboot(update, context)
     elif text == "🔙 Menu Utama":
         await start(update, context)
-
-    # VPN Config submenu
-    elif text == "👤 Generate User Config":
-        await generate_user_config(update, context)
-    elif text == "📋 List VPN Users":
-        await list_vpn_users(update, context)
-    elif text == "➕ Create VPN User":
-        user_states[chat_id] = 'waiting_vpn_add'
-        await update.message.reply_text("➕ Ketik: `username password`", parse_mode='Markdown')
-    elif text == "❌ Delete VPN User":
-        user_states[chat_id] = 'waiting_vpn_del'
-        await update.message.reply_text("❌ Ketik username yang mau dihapus:")
-
     # PPPoE submenu
     elif text == "📋 List PPPoE":
         await listpppoe(update, context)
@@ -339,7 +249,6 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     elif text == "❌ Del PPPoE":
         user_states[chat_id] = 'waiting_pppoe_del'
         await update.message.reply_text("❌ Ketik username yang mau dihapus:")
-
     # Hotspot submenu
     elif text == "📋 List Hotspot":
         await listhotspot(update, context)
@@ -351,62 +260,38 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     elif text == "❌ Del Hotspot":
         user_states[chat_id] = 'waiting_hotspot_del'
         await update.message.reply_text("❌ Ketik username yang mau dihapus:")
-
     # Handle state input
     elif chat_id in user_states:
         state = user_states[chat_id]
         del user_states[chat_id]
-
-        if state == 'waiting_ping_host':
-            result = run_mikrotik_command(f'/ping {text} count=4')
-            await update.message.reply_text(f"🏓 *Ping {text}*\n```\n{result}\n```", parse_mode='Markdown', reply_markup=MAIN_KEYBOARD)
-
-        elif state == 'waiting_pppoe_add':
-            if ' ' in text:
-                username, password = text.split(' ', 1)
-                result = run_mikrotik_command(f'/ppp secret add name={username} password={password} service=pppoe profile=default')
-                if "failure" in result.lower() or "error" in result.lower():
-                    await update.message.reply_text(f"❌ Gagal:\n{result}", reply_markup=PPPOE_KEYBOARD)
-                else:
-                    await update.message.reply_text(f"✅ *PPPoE Created*\n\nUser: `{username}`\nPass: `{password}`", parse_mode='Markdown', reply_markup=PPPOE_KEYBOARD)
+        
+        if state == 'waiting_pppoe_add':
+            parts = text.split()
+            if len(parts) >= 2:
+                context.args = parts
+                await addpppoe(update, context)
             else:
-                await update.message.reply_text("❌ Format salah. Ketik: `username password`", parse_mode='Markdown', reply_markup=PPPOE_KEYBOARD)
-
+                await update.message.reply_text("❌ Format: `username password`", parse_mode='Markdown', reply_markup=PPPOE_KEYBOARD)
         elif state == 'waiting_pppoe_del':
-            result = run_mikrotik_command(f'/ppp secret remove [find name={text}]')
-            await update.message.reply_text(f"❌ *Deleted*\n\nUser: `{text}`", parse_mode='Markdown', reply_markup=PPPOE_KEYBOARD)
-
+            context.args = [text.strip()]
+            await delpppoe(update, context)
         elif state == 'waiting_hotspot_add':
-            if ' ' in text:
-                username, password = text.split(' ', 1)
-                result = run_mikrotik_command(f'/ip hotspot user add name={username} password={password} profile=default')
-                await update.message.reply_text(f"✅ *Hotspot Created*\n\nUser: `{username}`\nPass: `{password}`", parse_mode='Markdown', reply_markup=HOTSPOT_KEYBOARD)
+            parts = text.split()
+            if len(parts) >= 2:
+                context.args = parts
+                await addhotspot(update, context)
             else:
-                await update.message.reply_text("❌ Format salah. Ketik: `username password`", parse_mode='Markdown', reply_markup=HOTSPOT_KEYBOARD)
-
+                await update.message.reply_text("❌ Format: `username password`", parse_mode='Markdown', reply_markup=HOTSPOT_KEYBOARD)
         elif state == 'waiting_hotspot_del':
-            result = run_mikrotik_command(f'/ip hotspot user remove [find name={text}]')
-            await update.message.reply_text(f"❌ *Deleted*\n\nUser: `{text}`", parse_mode='Markdown', reply_markup=HOTSPOT_KEYBOARD)
-
-        elif state == 'waiting_vpn_add':
-            if ' ' in text:
-                username, password = text.split(' ', 1)
-                result = run_mikrotik_command(f'/ppp secret add name={username} password={password} service=pppoe profile=default')
-                if "failure" not in result.lower() and "error" not in result.lower():
-                    config = generate_vpn_config(username, password)
-                    await update.message.reply_text(f"✅ *VPN User Created*\n\n{config}", parse_mode='Markdown', reply_markup=VPN_CONFIG_KEYBOARD)
-                else:
-                    await update.message.reply_text(f"❌ Gagal:\n{result}", reply_markup=VPN_CONFIG_KEYBOARD)
-            else:
-                await update.message.reply_text("❌ Format salah. Ketik: `username password`", parse_mode='Markdown', reply_markup=VPN_CONFIG_KEYBOARD)
-
-        elif state == 'waiting_vpn_del':
-            result = run_mikrotik_command(f'/ppp secret remove [find name={text}]')
-            await update.message.reply_text(f"❌ *VPN User Deleted*\n\nUser: `{text}`", parse_mode='Markdown', reply_markup=VPN_CONFIG_KEYBOARD)
+            context.args = [text.strip()]
+            await delhotspot(update, context)
+        elif state == 'waiting_ping_host':
+            context.args = [text.strip()]
+            await ping_cmd(update, context)
 
 def main():
     app = Application.builder().token(BOT_TOKEN).build()
-
+    
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CommandHandler("help", start))
     app.add_handler(CommandHandler("status", status))
@@ -425,8 +310,8 @@ def main():
     app.add_handler(CommandHandler("backup", backup))
     app.add_handler(CommandHandler("reboot", reboot))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
-
-    print("MikroTik Bot v3 - VPN Config Enhanced!")
+    
+    print("MikroTik Bot v2 - Keyboard Enhanced!")
     app.run_polling(drop_pending_updates=True)
 
 if __name__ == "__main__":
